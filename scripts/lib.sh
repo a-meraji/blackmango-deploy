@@ -43,3 +43,28 @@ pm2_startup_ready() {
 
   systemctl list-unit-files "pm2-${user}.service" --no-legend 2>/dev/null | grep -q "pm2-${user}.service"
 }
+
+read_env_var() {
+  local file="$1"
+  local key="$2"
+  local line
+
+  line="$(grep -E "^${key}=" "${file}" | head -n1 || true)"
+  if [[ -z "${line}" ]]; then
+    return 1
+  fi
+
+  line="${line#${key}=}"
+  line="${line%\"}"
+  line="${line#\"}"
+  printf '%s' "${line}"
+}
+
+load_backend_seed_env() {
+  local env_file="$1"
+
+  export DATABASE_URL="$(read_env_var "${env_file}" DATABASE_URL)"
+  export ADMIN_MOBILE="$(read_env_var "${env_file}" ADMIN_MOBILE || true)"
+  export ADMIN_FIRST_NAME="$(read_env_var "${env_file}" ADMIN_FIRST_NAME || true)"
+  export ADMIN_LAST_NAME="$(read_env_var "${env_file}" ADMIN_LAST_NAME || true)"
+}

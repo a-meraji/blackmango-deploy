@@ -11,7 +11,7 @@ echo "Checking Nginx homepage..."
 curl -fsS -I "${PUBLIC_BASE_URL}/" | sed -n '1,5p'
 
 echo "Checking API through Nginx..."
-curl -fsS -I "${PUBLIC_BASE_URL}/api/v1" | sed -n '1,5p' || true
+curl -fsS -I "${PUBLIC_BASE_URL}/api/v1/health" | sed -n '1,5p' || true
 
 echo "Checking uploads path through Nginx..."
 curl -fsS -I "${PUBLIC_BASE_URL}/uploads/" | sed -n '1,5p' || true

@@ -142,7 +142,7 @@ ZARINPAL_CALLBACK_URL=${PUBLIC_BASE_URL}/payment/callback
 ZARINPAL_SANDBOX=true
 PAYMENT_DEV_MOCK=true
 CLIENT_APP_URL=${PUBLIC_BASE_URL}
-DAILY_NOTIFICATION_CRON=0 7 * * *
+DAILY_NOTIFICATION_CRON="0 7 * * *"
 ADMIN_MOBILE=${ADMIN_MOBILE}
 ADMIN_FIRST_NAME=${ADMIN_FIRST_NAME}
 ADMIN_LAST_NAME=${ADMIN_LAST_NAME}
@@ -262,22 +262,19 @@ main() {
   log "Step 3/10: Building and starting backend (Prisma migrate included)"
   if pm2 describe bbm-backend >/dev/null 2>&1 && [[ -f "${BACKEND_ROOT}/dist/main.js" ]] && [[ "${REDEPLOY_BACKEND:-0}" != "1" ]]; then
     log "Backend already running, skipping rebuild"
-    (
-      cd "${BACKEND_ROOT}"
-      set -a
-      # shellcheck disable=SC1090
-      source .env
-      set +a
-      npx ts-node --transpile-only prisma/seed-admin.ts
-    )
+    "${APP_ROOT}/deploy/scripts/seed_admin.sh"
   else
     APP_ROOT="${APP_ROOT}" APP_ENV="${APP_ENV}" \
       "${APP_ROOT}/deploy/scripts/deploy_backend.sh"
   fi
 
   log "Step 4/10: Building frontend static files"
-  APP_ROOT="${APP_ROOT}" FRONTEND_ROOT="${FRONTEND_ROOT}" FRONTEND_DIST="${FRONTEND_DIST}" \
-    "${APP_ROOT}/deploy/scripts/deploy_frontend.sh"
+  if [[ -f "${FRONTEND_DIST}/index.html" ]] && [[ "${REDEPLOY_FRONTEND:-0}" != "1" ]]; then
+    log "Frontend already built, skipping"
+  else
+    APP_ROOT="${APP_ROOT}" FRONTEND_ROOT="${FRONTEND_ROOT}" FRONTEND_DIST="${FRONTEND_DIST}" \
+      "${APP_ROOT}/deploy/scripts/deploy_frontend.sh"
+  fi
 
   log "Step 5/10: Enabling Nginx"
   maybe_sudo nginx -t
