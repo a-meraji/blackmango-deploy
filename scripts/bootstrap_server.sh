@@ -2,10 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
 SOURCE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Fixed deployment values (no manual edits required)
-export APP_ROOT="${APP_ROOT:-/var/www/big_black_mango}"
+# Defaults: use current project folder (e.g. /var/www/blackmango)
+export APP_ROOT="${APP_ROOT:-${SOURCE_ROOT}}"
 export BACKEND_ROOT="${BACKEND_ROOT:-$APP_ROOT/backend}"
 export FRONTEND_ROOT="${FRONTEND_ROOT:-$APP_ROOT/frontend}"
 export FRONTEND_DIST="${FRONTEND_DIST:-$APP_ROOT/frontend-dist}"
@@ -16,7 +19,7 @@ export BACKEND_PORT="${BACKEND_PORT:-3000}"
 export DB_NAME="${DB_NAME:-blackmango_db}"
 export DB_USER="${DB_USER:-blackmango_user}"
 export APP_ENV="${APP_ENV:-staging}"
-export BACKUP_DIR="${BACKUP_DIR:-/var/backups/big_black_mango}"
+export BACKUP_DIR="${BACKUP_DIR:-/var/backups/blackmango}"
 
 SECRETS_FILE="${DEPLOY_ROOT}/.generated.env"
 PM2_CONFIG="${DEPLOY_ROOT}/pm2/backend.ecosystem.config.cjs"
@@ -40,20 +43,20 @@ random_hex() {
 
 sync_project_to_app_root() {
   if [[ "${SOURCE_ROOT}" == "${APP_ROOT}" ]]; then
-    log "Project already at ${APP_ROOT}"
+    log "Using project at ${APP_ROOT}"
     return
   fi
 
   log "Syncing project to ${APP_ROOT}"
-  sudo mkdir -p "${APP_ROOT}"
-  sudo rsync -a \
+  maybe_sudo mkdir -p "${APP_ROOT}"
+  maybe_sudo rsync -a \
     --delete \
     --exclude node_modules \
     --exclude backend/uploads \
     --exclude frontend/dist \
     --exclude deploy/.generated.env \
     "${SOURCE_ROOT}/" "${APP_ROOT}/"
-  sudo chown -R "${USER}:${USER}" "${APP_ROOT}"
+  maybe_sudo chown -R "${USER}:${USER}" "${APP_ROOT}"
 }
 
 load_or_create_secrets() {
@@ -162,10 +165,10 @@ render_runtime_configs() {
     -e "s|__FRONTEND_DIST__|${FRONTEND_DIST}|g" \
     -e "s|__BACKEND_PORT__|${BACKEND_PORT}|g" \
     "${DEPLOY_ROOT}/nginx/bbm-ip-http.conf.template" \
-    | sudo tee "${NGINX_AVAILABLE}" >/dev/null
+    | maybe_sudo tee "${NGINX_AVAILABLE}" >/dev/null
 
-  sudo ln -sf "${NGINX_AVAILABLE}" "${NGINX_ENABLED}"
-  sudo rm -f /etc/nginx/sites-enabled/default
+  maybe_sudo ln -sf "${NGINX_AVAILABLE}" "${NGINX_ENABLED}"
+  maybe_sudo rm -f /etc/nginx/sites-enabled/default
 }
 
 configure_pm2_startup() {
@@ -173,15 +176,19 @@ configure_pm2_startup() {
   pm2 save
   local startup_line
   startup_line="$(pm2 startup systemd -u "${USER}" --hp "${HOME}" | tail -n 1)"
-  if [[ "${startup_line}" == sudo* ]]; then
-    eval "${startup_line}"
+  if [[ -n "${startup_line}" ]]; then
+    if [[ "${startup_line}" == sudo* ]]; then
+      eval "${startup_line}"
+    else
+      bash -c "${startup_line}"
+    fi
   fi
 }
 
 configure_ops() {
   log "Configuring backups and log rotation"
-  sudo mkdir -p "${BACKUP_DIR}"
-  sudo chown "${USER}:${USER}" "${BACKUP_DIR}"
+  maybe_sudo mkdir -p "${BACKUP_DIR}"
+  maybe_sudo chown "${USER}:${USER}" "${BACKUP_DIR}"
 
   if ! pm2 module:list 2>/dev/null | grep -q pm2-logrotate; then
     pm2 install pm2-logrotate
@@ -190,19 +197,18 @@ configure_ops() {
   pm2 set pm2-logrotate:retain 14
   pm2 set pm2-logrotate:compress true
 
-  sudo cp "${DEPLOY_ROOT}/logrotate/bbm-app.conf" /etc/logrotate.d/bbm-app
+  maybe_sudo cp "${DEPLOY_ROOT}/logrotate/bbm-app.conf" /etc/logrotate.d/bbm-app
 
   local cron_line="30 2 * * * DB_PASS='${DB_PASS}' DB_NAME='${DB_NAME}' DB_USER='${DB_USER}' BACKUP_DIR='${BACKUP_DIR}' ${DEPLOY_ROOT}/scripts/backup_postgres.sh >> /var/log/bbm-backup.log 2>&1"
   (crontab -l 2>/dev/null | grep -Fv "${DEPLOY_ROOT}/scripts/backup_postgres.sh"; echo "${cron_line}") | crontab -
 }
 
 main() {
-  if [[ "${EUID}" -eq 0 ]]; then
-    echo "Run as a regular sudo-capable user, not root."
-    exit 1
-  fi
-
   require_command openssl
+
+  if [[ "${EUID}" -eq 0 ]]; then
+    log "Running as root (supported)"
+  fi
 
   sync_project_to_app_root
 
@@ -237,9 +243,9 @@ main() {
     "${APP_ROOT}/deploy/scripts/deploy_frontend.sh"
 
   log "Step 5/10: Enabling Nginx"
-  sudo nginx -t
-  sudo systemctl enable --now nginx
-  sudo systemctl reload nginx
+  maybe_sudo nginx -t
+  maybe_sudo systemctl enable --now nginx
+  maybe_sudo systemctl reload nginx
 
   configure_pm2_startup
   configure_ops
@@ -250,6 +256,7 @@ main() {
   log "Deployment complete"
   echo
   echo "App URL:        ${PUBLIC_BASE_URL}"
+  echo "Project path:   ${APP_ROOT}"
   echo "Backend env:    ${BACKEND_ROOT}/.env"
   echo "Secrets file:   ${SECRETS_FILE}"
   echo "PM2 process:    bbm-backend"
@@ -259,7 +266,7 @@ main() {
   echo "  pm2 status"
   echo "  pm2 logs bbm-backend"
   echo "  pm2 restart bbm-backend"
-  echo "  sudo systemctl reload nginx"
+  echo "  systemctl reload nginx"
 }
 
 main "$@"

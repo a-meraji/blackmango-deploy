@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
 PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://185.7.212.18}"
 
 echo "Checking Nginx homepage..."
@@ -16,7 +20,6 @@ echo "PM2 status:"
 pm2 status
 
 echo "Nginx status:"
-sudo systemctl status nginx --no-pager | sed -n '1,15p'
+maybe_sudo systemctl status nginx --no-pager | sed -n '1,15p'
 
 echo "Verify complete."
-

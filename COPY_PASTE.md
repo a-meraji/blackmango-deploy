@@ -20,14 +20,16 @@ No manual env editing is required.
 ## 1) SSH into server
 
 ```bash
-ssh YOUR_SSH_USER@185.7.212.18
+ssh root@185.7.212.18
 ```
-
-Replace `YOUR_SSH_USER` with your real Linux username (for example `root` or `deploy`).
 
 ---
 
 ## 2) Go to project folder
+
+```bash
+cd /var/www/blackmango
+```
 
 If you are not sure where it is:
 
@@ -103,11 +105,11 @@ chmod +x deploy/scripts/*.sh
 
 ## Generated files on server
 
-- App install path: `/var/www/big_black_mango`
-- Backend env: `/var/www/big_black_mango/backend/.env`
-- Frontend env: `/var/www/big_black_mango/frontend/.env`
-- Secrets: `/var/www/big_black_mango/deploy/.generated.env`
-- Frontend served from: `/var/www/big_black_mango/frontend-dist`
+- App install path: `/var/www/blackmango` (auto-detected from project folder)
+- Backend env: `/var/www/blackmango/backend/.env`
+- Frontend env: `/var/www/blackmango/frontend/.env`
+- Secrets: `/var/www/blackmango/deploy/.generated.env`
+- Frontend served from: `/var/www/blackmango/frontend-dist`
 
 Keep `deploy/.generated.env` safe. It contains DB and JWT secrets.
 

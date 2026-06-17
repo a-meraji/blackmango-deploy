@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ROOT="${APP_ROOT:-/var/www/big_black_mango}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+APP_ROOT="${APP_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 BACKEND_ROOT="${BACKEND_ROOT:-$APP_ROOT/backend}"
 PM2_CONFIG="${PM2_CONFIG:-$APP_ROOT/deploy/pm2/backend.ecosystem.config.cjs}"
 APP_ENV="${APP_ENV:-staging}"
@@ -33,4 +37,3 @@ pm2 status
 pm2 logs bbm-backend --lines 50 --nostream
 
 echo "Backend deploy complete."
-

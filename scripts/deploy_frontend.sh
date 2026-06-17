@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ROOT="${APP_ROOT:-/var/www/big_black_mango}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "${SCRIPT_DIR}/lib.sh"
+
+APP_ROOT="${APP_ROOT:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 FRONTEND_ROOT="${FRONTEND_ROOT:-$APP_ROOT/frontend}"
 FRONTEND_DIST="${FRONTEND_DIST:-$APP_ROOT/frontend-dist}"
 
@@ -19,4 +23,3 @@ mkdir -p "${FRONTEND_DIST}"
 cp -R dist/* "${FRONTEND_DIST}/"
 
 echo "Frontend deploy complete: ${FRONTEND_DIST}"
-
