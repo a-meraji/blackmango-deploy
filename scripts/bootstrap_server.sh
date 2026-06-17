@@ -20,6 +20,9 @@ export DB_NAME="${DB_NAME:-blackmango_db}"
 export DB_USER="${DB_USER:-blackmango_user}"
 export APP_ENV="${APP_ENV:-staging}"
 export BACKUP_DIR="${BACKUP_DIR:-/var/backups/blackmango}"
+export ADMIN_MOBILE="${ADMIN_MOBILE:-09033018426}"
+export ADMIN_FIRST_NAME="${ADMIN_FIRST_NAME:-مدیر}"
+export ADMIN_LAST_NAME="${ADMIN_LAST_NAME:-رستوران}"
 
 SECRETS_FILE="${DEPLOY_ROOT}/.generated.env"
 PM2_CONFIG="${DEPLOY_ROOT}/pm2/backend.ecosystem.config.cjs"
@@ -86,6 +89,7 @@ EOF
 
 generate_vapid_keys() {
   if [[ -n "${VAPID_PUBLIC_KEY:-}" && -n "${VAPID_PRIVATE_KEY:-}" ]]; then
+    log "VAPID keys already present, skipping"
     return
   fi
 
@@ -93,7 +97,7 @@ generate_vapid_keys() {
   require_command node
   cd "${BACKEND_ROOT}"
   if [[ ! -d node_modules/web-push ]]; then
-    npm ci >/dev/null
+    npm_ci_install >/dev/null
   fi
 
   local vapid_json
@@ -139,8 +143,12 @@ ZARINPAL_SANDBOX=true
 PAYMENT_DEV_MOCK=true
 CLIENT_APP_URL=${PUBLIC_BASE_URL}
 DAILY_NOTIFICATION_CRON=0 7 * * *
+ADMIN_MOBILE=${ADMIN_MOBILE}
+ADMIN_FIRST_NAME=${ADMIN_FIRST_NAME}
+ADMIN_LAST_NAME=${ADMIN_LAST_NAME}
 EOF
   chmod 600 "${BACKEND_ROOT}/.env"
+  write_npmrc "${BACKEND_ROOT}"
 }
 
 write_frontend_env() {
@@ -151,6 +159,7 @@ VITE_APP_STORE_URL=
 VITE_PLAY_STORE_URL=
 VITE_DELIVERY_FEE=25000
 EOF
+  write_npmrc "${FRONTEND_ROOT}"
 }
 
 render_runtime_configs() {
@@ -172,16 +181,18 @@ render_runtime_configs() {
 }
 
 configure_pm2_startup() {
-  log "Configuring PM2 startup on boot"
   pm2 save
+
+  if pm2_startup_ready "${USER}"; then
+    log "PM2 startup already configured, skipping"
+    return
+  fi
+
+  log "Configuring PM2 startup on boot"
   local startup_line
   startup_line="$(pm2 startup systemd -u "${USER}" --hp "${HOME}" | tail -n 1)"
   if [[ -n "${startup_line}" ]]; then
-    if [[ "${startup_line}" == sudo* ]]; then
-      eval "${startup_line}"
-    else
-      bash -c "${startup_line}"
-    fi
+    eval "${startup_line}"
   fi
 }
 
@@ -190,17 +201,27 @@ configure_ops() {
   maybe_sudo mkdir -p "${BACKUP_DIR}"
   maybe_sudo chown "${USER}:${USER}" "${BACKUP_DIR}"
 
-  if ! pm2 module:list 2>/dev/null | grep -q pm2-logrotate; then
+  if pm2 module:list 2>/dev/null | grep -q pm2-logrotate; then
+    log "PM2 logrotate already installed, skipping install"
+  else
     pm2 install pm2-logrotate
   fi
   pm2 set pm2-logrotate:max_size 20M
   pm2 set pm2-logrotate:retain 14
   pm2 set pm2-logrotate:compress true
 
-  maybe_sudo cp "${DEPLOY_ROOT}/logrotate/bbm-app.conf" /etc/logrotate.d/bbm-app
+  if [[ -f /etc/logrotate.d/bbm-app ]]; then
+    log "Logrotate config already present, skipping copy"
+  else
+    maybe_sudo cp "${DEPLOY_ROOT}/logrotate/bbm-app.conf" /etc/logrotate.d/bbm-app
+  fi
 
-  local cron_line="30 2 * * * DB_PASS='${DB_PASS}' DB_NAME='${DB_NAME}' DB_USER='${DB_USER}' BACKUP_DIR='${BACKUP_DIR}' ${DEPLOY_ROOT}/scripts/backup_postgres.sh >> /var/log/bbm-backup.log 2>&1"
-  (crontab -l 2>/dev/null | grep -Fv "${DEPLOY_ROOT}/scripts/backup_postgres.sh"; echo "${cron_line}") | crontab -
+  if crontab -l 2>/dev/null | grep -Fq "${DEPLOY_ROOT}/scripts/backup_postgres.sh"; then
+    log "Backup cron already configured, skipping"
+  else
+    local cron_line="30 2 * * * DB_PASS='${DB_PASS}' DB_NAME='${DB_NAME}' DB_USER='${DB_USER}' BACKUP_DIR='${BACKUP_DIR}' ${DEPLOY_ROOT}/scripts/backup_postgres.sh >> /var/log/bbm-backup.log 2>&1"
+    (crontab -l 2>/dev/null; echo "${cron_line}") | crontab -
+  fi
 }
 
 main() {
@@ -216,8 +237,12 @@ main() {
 
   chmod +x "${APP_ROOT}/deploy/scripts/"*.sh
 
-  log "Step 1/10: Installing prerequisites"
-  "${APP_ROOT}/deploy/scripts/install_prereqs.sh"
+  if prereqs_ready; then
+    log "Step 1/10: Prerequisites already installed, skipping"
+  else
+    log "Step 1/10: Installing prerequisites"
+    "${APP_ROOT}/deploy/scripts/install_prereqs.sh"
+  fi
 
   load_or_create_secrets
   export DB_PASS JWT_ACCESS_SECRET JWT_REFRESH_SECRET
@@ -235,8 +260,20 @@ main() {
   render_runtime_configs
 
   log "Step 3/10: Building and starting backend (Prisma migrate included)"
-  APP_ROOT="${APP_ROOT}" APP_ENV="${APP_ENV}" \
-    "${APP_ROOT}/deploy/scripts/deploy_backend.sh"
+  if pm2 describe bbm-backend >/dev/null 2>&1 && [[ -f "${BACKEND_ROOT}/dist/main.js" ]] && [[ "${REDEPLOY_BACKEND:-0}" != "1" ]]; then
+    log "Backend already running, skipping rebuild"
+    (
+      cd "${BACKEND_ROOT}"
+      set -a
+      # shellcheck disable=SC1090
+      source .env
+      set +a
+      npx ts-node --transpile-only prisma/seed-admin.ts
+    )
+  else
+    APP_ROOT="${APP_ROOT}" APP_ENV="${APP_ENV}" \
+      "${APP_ROOT}/deploy/scripts/deploy_backend.sh"
+  fi
 
   log "Step 4/10: Building frontend static files"
   APP_ROOT="${APP_ROOT}" FRONTEND_ROOT="${FRONTEND_ROOT}" FRONTEND_DIST="${FRONTEND_DIST}" \

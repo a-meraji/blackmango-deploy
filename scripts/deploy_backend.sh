@@ -23,7 +23,7 @@ fi
 mkdir -p "${BACKEND_ROOT}/uploads"
 
 cd "${BACKEND_ROOT}"
-npm ci
+npm_ci_install
 npm run build
 
 if pm2 describe bbm-backend >/dev/null 2>&1; then

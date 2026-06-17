@@ -15,7 +15,7 @@ if [[ ! -d "${FRONTEND_ROOT}" ]]; then
 fi
 
 cd "${FRONTEND_ROOT}"
-npm ci
+npm_ci_install
 npm run build
 
 rm -rf "${FRONTEND_DIST}"

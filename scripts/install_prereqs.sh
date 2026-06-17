@@ -5,6 +5,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
+if prereqs_ready; then
+  echo "Prerequisites already installed, skipping."
+  node -v
+  npm -v
+  pm2 -v
+  maybe_sudo ufw status | sed -n '1,12p' || true
+  exit 0
+fi
+
 maybe_sudo apt update
 maybe_sudo apt -y upgrade
 maybe_sudo apt install -y curl ca-certificates gnupg lsb-release git ufw nginx postgresql postgresql-contrib build-essential
@@ -15,7 +24,7 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 if ! command -v pm2 >/dev/null 2>&1; then
-  maybe_sudo npm i -g pm2
+  maybe_sudo npm i -g pm2 --registry="${NPM_CONFIG_REGISTRY}"
 fi
 
 maybe_sudo systemctl enable --now postgresql

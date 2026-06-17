@@ -15,6 +15,12 @@ if [[ -z "${DB_PASS}" ]]; then
   exit 1
 fi
 
+if postgres_ready "${DB_USER}" "${DB_NAME}" "${DB_PASS}"; then
+  echo "PostgreSQL already configured, skipping."
+  PGPASSWORD="${DB_PASS}" psql -h 127.0.0.1 -U "${DB_USER}" -d "${DB_NAME}" -c "SELECT current_database(), current_user;"
+  exit 0
+fi
+
 maybe_sudo systemctl enable --now postgresql
 
 maybe_sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1 || \
