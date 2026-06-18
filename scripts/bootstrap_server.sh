@@ -190,9 +190,11 @@ configure_pm2_startup() {
 
   log "Configuring PM2 startup on boot"
   local startup_line
-  startup_line="$(pm2 startup systemd -u "${USER}" --hp "${HOME}" | tail -n 1)"
+  startup_line="$(pm2 startup systemd -u "${USER}" --hp "${HOME}" | grep -E '^sudo ' | tail -n 1 || true)"
   if [[ -n "${startup_line}" ]]; then
     eval "${startup_line}"
+  else
+    log "PM2 startup command not found in output; service may already be configured"
   fi
 }
 
