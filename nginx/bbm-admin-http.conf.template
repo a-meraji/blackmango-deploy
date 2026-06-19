@@ -1,0 +1,60 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name admin.__DOMAIN__;
+
+    root __ADMIN_DIST__;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    # ── Compression ───────────────────────────────────────────────────────────
+    gzip on;
+    gzip_vary on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types
+        text/plain text/css application/javascript application/json
+        image/svg+xml application/manifest+json application/wasm font/woff2;
+
+    # ── Hashed, immutable build assets (cache for a year) ──────────────────────
+    location /assets/ {
+        access_log off;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+    location ~* \.(?:woff2|png|ico|svg)$ {
+        access_log off;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # index.html must never be cached — admin is a plain SPA (no service worker / manifest).
+    location = /index.html { add_header Cache-Control "no-cache"; }
+
+    # ── Admin proxies its OWN /api + /uploads to the shared backend ────────────
+    # All admin API calls are therefore same-origin (admin.<domain> → admin.<domain>/api),
+    # so there is NO CORS preflight and the backend CORS_ORIGINS needs no admin entry.
+    location /api/ {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads/ {
+        proxy_pass http://127.0.0.1:__BACKEND_PORT__/uploads/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA fallback — serve the admin shell for every client-side route (/admin/...).
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
