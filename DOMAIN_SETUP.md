@@ -1,5 +1,9 @@
 # Domain Setup: masoudrazaghi.com on ParsPack VPS
 
+> **ParsPack / Iranian VPS note:** Let's Encrypt's HTTP-01 challenge servers cannot reach
+> this VPS from the internet, so `certbot --nginx` times out. Use **Option A** below —
+> obtain the cert from the Parspack panel and install it manually.
+
 Server IP: `185.7.212.18`  
 Project path: `/var/www/blackmango`
 
@@ -28,9 +32,73 @@ dig +short www.masoudrazaghi.com A
 
 Both should return `185.7.212.18`.
 
-## Step 2) Enable domain + HTTPS (automated)
+## Step 2) Option A — Manual cert install (ParsPack panel certs)
 
-On server:
+### 2a) Pull latest code on server
+
+```bash
+cd /var/www/blackmango
+git pull
+chmod +x deploy/scripts/*.sh
+```
+
+### 2b) Place the cert files
+
+Create the directory and paste each cert block. Use `cat >` so you can paste multiple lines, then press **Ctrl+D** to save.
+
+```bash
+mkdir -p /etc/ssl/bbm/masoudrazaghi.com
+```
+
+**fullchain.pem** — paste the "full chain" value from Parspack (the one with TWO or THREE `-----BEGIN CERTIFICATE-----` blocks):
+
+```bash
+cat > /etc/ssl/bbm/masoudrazaghi.com/fullchain.pem
+# paste, then Ctrl+D
+```
+
+**privkey.pem** — paste the "private key" value from Parspack:
+
+```bash
+cat > /etc/ssl/bbm/masoudrazaghi.com/privkey.pem
+# paste, then Ctrl+D
+chmod 600 /etc/ssl/bbm/masoudrazaghi.com/privkey.pem
+```
+
+Verify both files look right:
+
+```bash
+openssl x509 -noout -subject -dates -in /etc/ssl/bbm/masoudrazaghi.com/fullchain.pem
+openssl rsa  -noout -check        -in /etc/ssl/bbm/masoudrazaghi.com/privkey.pem
+```
+
+### 2c) Run the install script
+
+```bash
+cd /var/www/blackmango
+./deploy/scripts/install_manual_ssl.sh
+```
+
+The script will:
+- set correct permissions on certs
+- render the Nginx HTTPS config from the template
+- switch Nginx from IP/HTTP config to domain+HTTPS config
+- update `backend/.env` (`COOKIE_SECURE`, `APP_URL`, `CORS_ORIGINS`, etc.)
+- restart the backend PM2 process
+- verify with curl
+
+### 2d) Cert renewal (every ~90 days)
+
+The Parspack panel shows the expiry date. When it's close:
+1. Renew in Parspack panel → download new cert files
+2. Overwrite the files on server (same `cat >` commands as step 2b)
+3. `nginx -t && systemctl reload nginx` — no restart needed, just reload
+
+---
+
+## Step 2 Alt) Option B — Automated certbot (only if certbot can reach internet)
+
+On server (only if `curl https://acme-v02.api.letsencrypt.org` succeeds from the VPS):
 
 ```bash
 cd /var/www/blackmango
@@ -132,3 +200,63 @@ certbot renew --dry-run
 
 Certbot `--redirect` enables HTTPS redirect.  
 If you want only one canonical host, configure redirect in Nginx after SSL is active.
+
+---
+
+## Step 5) Admin subdomain — admin.masoudrazaghi.com (separated admin SPA)
+
+The admin panel is a **separate** plain SPA (no service worker / PWA). It is served at
+`admin.masoudrazaghi.com` and **proxies its own `/api` + `/uploads`** to the same backend
+(`127.0.0.1:3000`), so every admin call is same-origin → **no CORS, no `CORS_ORIGINS`
+change, no backend edits**.
+
+### 5a) DNS — add the admin A record (ParsPack panel)
+
+| Type | Name/Host | Value | TTL |
+|------|-----------|-------|-----|
+| A | `admin` | `185.7.212.18` | 300 (or default) |
+
+Verify after propagation:
+
+```bash
+dig +short admin.masoudrazaghi.com A   # must return 185.7.212.18
+```
+
+### 5b) TLS — cert must be valid for admin.masoudrazaghi.com
+
+Two options:
+
+- **Recommended — one SAN cert:** in the Parspack panel, (re)issue the
+  `masoudrazaghi.com` cert with `admin.masoudrazaghi.com` added to its SAN list, then
+  overwrite `/etc/ssl/bbm/masoudrazaghi.com/{fullchain,privkey}.pem` (same `cat >` flow as
+  Step 2b). One cert renews both apex and admin. `install_admin_ssl.sh` uses this dir by
+  default.
+- **Alternative — standalone admin cert:** obtain a cert for `admin.masoudrazaghi.com` and
+  place it at `/etc/ssl/bbm/admin.masoudrazaghi.com/{fullchain,privkey}.pem`, then run the
+  install script with `CERT_DIR=/etc/ssl/bbm/admin.masoudrazaghi.com`.
+
+### 5c) Build the admin SPA and bring up the nginx block
+
+```bash
+cd /var/www/blackmango
+git pull
+chmod +x deploy/scripts/*.sh
+
+# build admin-dist (independent of the customer PWA)
+./deploy/scripts/deploy_admin.sh
+
+# render + enable the admin HTTPS nginx block, then reload nginx
+./deploy/scripts/install_admin_ssl.sh
+# (standalone cert variant: CERT_DIR=/etc/ssl/bbm/admin.masoudrazaghi.com ./deploy/scripts/install_admin_ssl.sh)
+```
+
+### 5d) Verify
+
+```bash
+curl -I https://admin.masoudrazaghi.com/            # 200, serves admin index.html
+curl -I https://admin.masoudrazaghi.com/api/v1/health
+```
+
+In the browser at `https://admin.masoudrazaghi.com`: log in, and confirm in DevTools →
+**no Service Worker and no manifest** (admin is a plain SPA), and that API calls are
+**same-origin 200s with no `OPTIONS` preflight** (proof CORS is not in play).
