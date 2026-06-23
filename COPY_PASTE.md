@@ -117,11 +117,17 @@ Keep `deploy/.generated.env` safe. It contains DB and JWT secrets.
 
 ## Re-deploy after code updates
 
+The project is **three separate git repos** (`backend`, `frontend`, `deploy`) cloned side by
+side under the project folder — there is no single all-in-one repo, so pull each one:
+
 ```bash
-cd ~/big_black_mango
-git pull
-./deploy/scripts/bootstrap_server.sh
+cd /var/www/blackmango
+./deploy/scripts/pull_all.sh        # git pull in backend + frontend + deploy
+DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh   # rebuild both front-ends + verify routing
 ```
+
+(First-time server setup still uses `./deploy/scripts/bootstrap_server.sh` — see the
+repository layout note in [DOMAIN_SETUP.md](DOMAIN_SETUP.md).)
 
 ---
 

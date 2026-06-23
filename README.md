@@ -112,10 +112,21 @@ sudo chown -R "$USER":"$USER" "$APP_ROOT"
 cd "$APP_ROOT"
 ```
 
-Copy your project (git clone or rsync). Expected result:
+Clone the **three separate repos** side by side under `$APP_ROOT` (there is no all-in-one
+repo — `$APP_ROOT` itself is just a container directory):
 
-- `$BACKEND_ROOT`
-- `$FRONTEND_ROOT`
+```bash
+cd "$APP_ROOT"
+git clone git@github.com:amirhoseinqd/blackmango-backend.git backend
+git clone git@github.com:a-meraji/bigblackmango.git          frontend
+git clone git@github.com:a-meraji/blackmango-deploy.git      deploy
+```
+
+Expected result:
+
+- `$BACKEND_ROOT`  (= `$APP_ROOT/backend`)
+- `$FRONTEND_ROOT` (= `$APP_ROOT/frontend`)
+- `$APP_ROOT/deploy`
 
 Create persistent uploads dir:
 

@@ -7,6 +7,27 @@
 Server IP: `185.7.212.18`  
 Project path: `/var/www/blackmango`
 
+> **Repository layout — THREE separate git repos (no all-in-one).** `/var/www/blackmango` is
+> a plain container directory (it is **not** a git repo). Inside it live three independent
+> repositories cloned side by side:
+>
+> | Path | Repo |
+> | --- | --- |
+> | `/var/www/blackmango/backend`  | `git@github.com:amirhoseinqd/blackmango-backend.git` |
+> | `/var/www/blackmango/frontend` | `git@github.com:a-meraji/bigblackmango.git` |
+> | `/var/www/blackmango/deploy`   | `git@github.com:a-meraji/blackmango-deploy.git` |
+>
+> First-time clone:
+> ```bash
+> sudo mkdir -p /var/www/blackmango && sudo chown "$USER" /var/www/blackmango
+> cd /var/www/blackmango
+> git clone git@github.com:amirhoseinqd/blackmango-backend.git backend
+> git clone git@github.com:a-meraji/bigblackmango.git          frontend
+> git clone git@github.com:a-meraji/blackmango-deploy.git      deploy
+> ```
+> To update later, pull each repo — or run the helper `./deploy/scripts/pull_all.sh`.
+> Never run `git pull` at `/var/www/blackmango` itself; there is no repo there by design.
+
 ## Step 1) DNS in ParsPack panel
 
 Log in to ParsPack and open DNS management for `masoudrazaghi.com`.
@@ -38,7 +59,7 @@ Both should return `185.7.212.18`.
 
 ```bash
 cd /var/www/blackmango
-git pull
+./deploy/scripts/pull_all.sh      # pulls backend + frontend + deploy (three separate repos)
 chmod +x deploy/scripts/*.sh
 ```
 
@@ -239,7 +260,7 @@ Two options:
 
 ```bash
 cd /var/www/blackmango
-git pull
+./deploy/scripts/pull_all.sh      # frontend (admin source) + deploy (scripts/templates)
 chmod +x deploy/scripts/*.sh
 
 # build admin-dist (independent of the customer PWA)
@@ -260,3 +281,50 @@ curl -I https://admin.masoudrazaghi.com/api/v1/health
 In the browser at `https://admin.masoudrazaghi.com`: log in, and confirm in DevTools →
 **no Service Worker and no manifest** (admin is a plain SPA), and that API calls are
 **same-origin 200s with no `OPTIONS` preflight** (proof CORS is not in play).
+
+---
+
+## Step 6) Routine deploys (after one-time setup above) — one command
+
+Once DNS + TLS + both nginx blocks exist (Steps 1–5), every later code deploy is a single
+command. It rebuilds **both** front-ends, reloads nginx, and **verifies each host serves the
+right app** — it fails loudly if `admin.<domain>` is serving the customer home page:
+
+```bash
+cd /var/www/blackmango
+./deploy/scripts/pull_all.sh      # updates all three repos (no all-in-one repo exists)
+DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh
+```
+
+Useful flags:
+
+```bash
+SKIP_ADMIN=1        DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh   # customer only
+SKIP_CUSTOMER=1     DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh   # admin only
+REDEPLOY_BACKEND=1  DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh   # + rebuild backend
+```
+
+The deploy aborts with a clear message if the admin nginx block isn't enabled (pointing you
+back to Step 5). To re-check routing at any time:
+
+```bash
+DOMAIN=masoudrazaghi.com ./deploy/scripts/verify_deploy.sh
+```
+
+### Troubleshooting: "admin.<domain> shows the customer home page"
+
+The request to `admin.<domain>` is **not matching the admin nginx block** and is falling
+through to the apex/customer block. Diagnose:
+
+```bash
+ls -l /etc/nginx/sites-enabled/                       # is bbm-admin.conf present?
+sudo nginx -T | grep -nE 'server_name|root /var'      # which server_name owns admin.<domain>?
+curl -skI --resolve admin.masoudrazaghi.com:443:127.0.0.1 https://admin.masoudrazaghi.com/
+```
+
+Fix = bring up the admin block, then re-verify:
+
+```bash
+DOMAIN=masoudrazaghi.com ./deploy/scripts/install_admin_ssl.sh
+DOMAIN=masoudrazaghi.com ./deploy/scripts/deploy_all.sh
+```
